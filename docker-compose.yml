@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  nopcommerce_database:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: nopcommerce_mssql_server
+    hostname: nopcommerce_database
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "yourStrong()Password"
+      MSSQL_PID: "Express"
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+    networks:
+      - nopnet
+
+  nopcommerce_web:
+    build: .
+    container_name: nopcommerce_web
+    depends_on:
+      - nopcommerce_database
+    ports:
+      - "9000:80"
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=nopcommerce_database,1433;Database=nopcommerce;User Id=sa;Password=yourStrong()Password;
+    volumes:
+      - nop_data:/app
+    networks:
+      - nopnet
+
+volumes:
+  mssql_data:
+  nop_data:
+
+networks:
+  nopnet:
+
