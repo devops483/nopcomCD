@@ -48,7 +48,7 @@ pipeline {
                     curl -vsSf http://localhost:9000 | grep -qi "nopCommerce"
 
                     echo "🔍 Checking login page content..."
-                    curl -vsSf http://localhost:9000/login | grep -qi "Email"
+                    curl -vsSf http://localhost:9009/login | grep -qi "Email"
 
                     echo "🔍 Ensuring DB container is running..."
                     docker ps | grep -q nopcommerce_mssql_server
