@@ -10,6 +10,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout Code') {
             steps {
                 git branch: 'master', url: 'https://github.com/devops483/nopcomCD.git'
@@ -18,21 +19,33 @@ pipeline {
 
         stage('Stop Existing Containers') {
             steps {
-                sh 'docker-compose down || true'
+                sh '''
+                    docker-compose down || true
+                    docker rm -f nopcommerce_mssql_server || true
+                    docker rm -f nopcommerce_web || true
+                '''
             }
         }
 
         stage('Start All Containers') {
             steps {
-                sh 'docker-compose up -d'
-                echo 'Waiting for nopCommerce and SQL Server to start...'
-                sh 'sleep 30'
+                sh '''
+                    docker-compose up -d
+                    echo "Waiting for services to be ready..."
+                    sleep 30
+                '''
             }
         }
 
         stage('Wait for Manual Installation') {
             steps {
-                input message: 'Please complete nopCommerce installation in the browser, then click Continue to proceed with backup.'
+                input message: '''
+                ✅ Please open your browser and finish installing nopCommerce at:
+                http://<your-server-ip>:9000
+
+                ⚠️ Once installation is complete and the nopcommerce database is created,
+                click "Proceed" to back up the database.
+                '''
             }
         }
 
@@ -40,6 +53,7 @@ pipeline {
             steps {
                 sh '''
                     mkdir -p $BACKUP_DIR
+
                     docker exec $DB_CONTAINER mkdir -p /var/opt/mssql/backup || true
 
                     docker exec $DB_CONTAINER /opt/mssql-tools/bin/sqlcmd \
@@ -53,14 +67,17 @@ pipeline {
 
         stage('Test') {
             steps {
-                echo 'Insert your test commands here (e.g., dotnet test or health check scripts)'
+                echo '✅ Insert test commands here (e.g., dotnet test, curl health check, etc.)'
             }
         }
     }
 
     post {
         failure {
-            echo 'Build failed. Email notification skipped (SMTP not configured).'
+            echo '❌ Build failed. Email notification skipped (SMTP not configured).'
+        }
+        success {
+            echo '✅ Build and deployment complete.'
         }
     }
 }
