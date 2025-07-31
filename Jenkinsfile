@@ -12,7 +12,7 @@ pipeline {
     stages {
         stage('Checkout Code') {
             steps {
-                git branch: 'main', url: 'https://github.com/your-username/your-nopcommerce-repo.git'
+                git branch: 'master', url: 'https://github.com/devops483/nopcomCD.git'
             }
         }
 
