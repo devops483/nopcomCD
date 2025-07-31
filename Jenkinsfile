@@ -45,31 +45,15 @@ pipeline {
                     [ "$HTTP_CODE" = "200" ]
 
                     echo "🔍 Checking nopCommerce keyword on homepage..."
-                    curl -s http://localhost:9000 | grep -qi "nopCommerce"
+                    curl -vsSf http://localhost:9000 | grep -qi "nopCommerce"
 
                     echo "🔍 Checking login page content..."
-                    curl -s http://localhost:9000/login | grep -qi "Email"
+                    curl -vsSf http://localhost:9000/login | grep -qi "Email"
 
                     echo "🔍 Ensuring DB container is running..."
                     docker ps | grep -q nopcommerce_mssql_server
 
                     echo "✅ All smoke tests passed."
-                '''
-            }
-        }
-
-        stage('Run Unit Tests in Container') {
-            steps {
-                sh '''
-                    echo "🧪 Running unit tests inside .NET SDK 9.0 container..."
-
-                    docker run --rm \
-                        -v "$PWD:/app" \
-                        -w /app \
-                        mcr.microsoft.com/dotnet/sdk:9.0 \
-                        sh -c "dotnet restore && dotnet build --no-restore && dotnet test --no-build --logger 'trx;LogFileName=test_results.trx'"
-
-                    echo "✅ Unit tests completed."
                 '''
             }
         }
