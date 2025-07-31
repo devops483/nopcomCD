@@ -26,7 +26,7 @@ pipeline {
             steps {
                 sh 'docker-compose up -d nopcommerce_database'
                 echo 'Waiting for SQL Server to start...'
-                sh 'sleep 20'  // Optional: wait for MSSQL to initialize
+                sh 'sleep 20'
             }
         }
 
@@ -34,10 +34,12 @@ pipeline {
             steps {
                 sh '''
                     mkdir -p $BACKUP_DIR
-                    docker exec $DB_CONTAINER /opt/mssql-tools/bin/sqlcmd \
-                      -S localhost -U sa -P $DB_PASSWORD \
-                      -Q "BACKUP DATABASE [$DB_NAME] TO DISK = '/var/opt/mssql/backup/${DB_NAME}_jenkins.bak'"
-                    
+                    docker exec $DB_CONTAINER mkdir -p /var/opt/mssql/backup
+                    docker run --rm --network container:$DB_CONTAINER \
+                        mcr.microsoft.com/mssql-tools \
+                        /opt/mssql-tools/bin/sqlcmd \
+                        -S localhost -U sa -P "$DB_PASSWORD" \
+                        -Q "BACKUP DATABASE [$DB_NAME] TO DISK = '/var/opt/mssql/backup/${DB_NAME}_jenkins.bak'"
                     docker cp $DB_CONTAINER:/var/opt/mssql/backup/${DB_NAME}_jenkins.bak $BACKUP_DIR/
                 '''
             }
@@ -49,7 +51,6 @@ pipeline {
             }
         }
 
-        // Optional test stage if you want to run integration/unit tests
         stage('Test') {
             steps {
                 echo 'Insert your test commands here (e.g., dotnet test or health check scripts)'
@@ -58,14 +59,8 @@ pipeline {
     }
 
     post {
-        success {
-            archiveArtifacts artifacts: "$BACKUP_DIR/*.bak", fingerprint: true
-        }
         failure {
-            mail to: 'your@email.com',
-                 subject: "Jenkins Build Failed",
-                 body: "The Jenkins build failed. Please check the console output for more info."
+            echo 'Build failed. Email notification skipped (SMTP not configured).'
         }
     }
 }
-
