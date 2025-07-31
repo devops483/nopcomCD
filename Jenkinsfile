@@ -6,7 +6,6 @@ pipeline {
         DB_CONTAINER = "nopcommerce_mssql_server"
         DB_PASSWORD = "yourStrong()Password"
         DB_NAME = "nopcommerce"
-        BACKUP_DIR = "db_backups"
     }
 
     stages {
@@ -37,37 +36,23 @@ pipeline {
             }
         }
 
-        stage('Wait for Manual Installation') {
-            steps {
-                input message: '''
-                ✅ Please open your browser and finish installing nopCommerce at:
-                http://<your-server-ip>:9000
-
-                ⚠️ Once installation is complete and the nopcommerce database is created,
-                click "Proceed" to back up the database.
-                '''
-            }
-        }
-
-        stage('Database Backup') {
-            steps {
-                sh '''
-                    mkdir -p $BACKUP_DIR
-
-                    docker exec $DB_CONTAINER mkdir -p /var/opt/mssql/backup || true
-
-                    docker exec $DB_CONTAINER /opt/mssql-tools/bin/sqlcmd \
-                      -S localhost -U sa -P $DB_PASSWORD \
-                      -Q "BACKUP DATABASE [$DB_NAME] TO DISK = '/var/opt/mssql/backup/${DB_NAME}_jenkins.bak'"
-
-                    docker cp $DB_CONTAINER:/var/opt/mssql/backup/${DB_NAME}_jenkins.bak $BACKUP_DIR/
-                '''
-            }
-        }
-
         stage('Test') {
             steps {
-                echo '✅ Insert test commands here (e.g., dotnet test, curl health check, etc.)'
+                sh '''
+                    echo "🔍 Checking web container is up..."
+                    curl -s -o /dev/null -w "%{http_code}\\n" http://localhost:9000 | grep 200
+
+                    echo "🔍 Checking nopCommerce keyword on homepage..."
+                    curl -s http://localhost:9000 | grep -qi "nopCommerce"
+
+                    echo "🔍 Checking login page content..."
+                    curl -s http://localhost:9000/login | grep -qi "Email"
+
+                    echo "🔍 Ensuring DB container is running..."
+                    docker ps | grep -q nopcommerce_mssql_server
+
+                    echo "✅ All basic tests passed."
+                '''
             }
         }
     }
