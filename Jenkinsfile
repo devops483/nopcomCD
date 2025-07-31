@@ -22,11 +22,17 @@ pipeline {
             }
         }
 
-        stage('Start Database') {
+        stage('Start All Containers') {
             steps {
-                sh 'docker-compose up -d nopcommerce_database'
-                echo 'Waiting for SQL Server to start...'
-                sh 'sleep 20'
+                sh 'docker-compose up -d'
+                echo 'Waiting for nopCommerce and SQL Server to start...'
+                sh 'sleep 30'
+            }
+        }
+
+        stage('Wait for Manual Installation') {
+            steps {
+                input message: 'Please complete nopCommerce installation in the browser, then click Continue to proceed with backup.'
             }
         }
 
@@ -34,20 +40,14 @@ pipeline {
             steps {
                 sh '''
                     mkdir -p $BACKUP_DIR
-                    docker exec $DB_CONTAINER mkdir -p /var/opt/mssql/backup
-                    docker run --rm --network container:$DB_CONTAINER \
-                        mcr.microsoft.com/mssql-tools \
-                        /opt/mssql-tools/bin/sqlcmd \
-                        -S localhost -U sa -P "$DB_PASSWORD" \
-                        -Q "BACKUP DATABASE [$DB_NAME] TO DISK = '/var/opt/mssql/backup/${DB_NAME}_jenkins.bak'"
+                    docker exec $DB_CONTAINER mkdir -p /var/opt/mssql/backup || true
+
+                    docker exec $DB_CONTAINER /opt/mssql-tools/bin/sqlcmd \
+                      -S localhost -U sa -P $DB_PASSWORD \
+                      -Q "BACKUP DATABASE [$DB_NAME] TO DISK = '/var/opt/mssql/backup/${DB_NAME}_jenkins.bak'"
+
                     docker cp $DB_CONTAINER:/var/opt/mssql/backup/${DB_NAME}_jenkins.bak $BACKUP_DIR/
                 '''
-            }
-        }
-
-        stage('Build and Deploy App') {
-            steps {
-                sh 'docker-compose up -d --build'
             }
         }
 
