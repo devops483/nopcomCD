@@ -39,17 +39,20 @@ pipeline {
         stage('Test') {
             steps {
                 sh '''
+                    set -e  # Stop on any command failure
+
                     echo "🔍 Checking web container is up..."
-                    curl -s -o /dev/null -w "%{http_code}\\n" http://localhost:9000 | grep 200
+                    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9000)
+                    [ "$HTTP_CODE" = "200" ] || { echo "❌ Web container not responding properly."; exit 1; }
 
                     echo "🔍 Checking nopCommerce keyword on homepage..."
-                    curl -s http://localhost:9000 | grep -qi "nopCommerce"
+                    curl -s http://localhost:9000 | grep -qi "nopCommerce" || { echo "❌ nopCommerce keyword not found on homepage."; exit 1; }
 
                     echo "🔍 Checking login page content..."
-                    curl -s http://localhost:9000/login | grep -qi "Email"
+                    curl -s http://localhost:9000/login | grep -qi "Email" || { echo "❌ Login page does not contain expected content."; exit 1; }
 
                     echo "🔍 Ensuring DB container is running..."
-                    docker ps | grep -q nopcommerce_mssql_server
+                    docker ps | grep -q nopcommerce_mssql_server || { echo "❌ Database container is not running."; exit 1; }
 
                     echo "✅ All basic tests passed."
                 '''
@@ -59,10 +62,10 @@ pipeline {
 
     post {
         failure {
-            echo '❌ Build failed. Email notification skipped (SMTP not configured).'
+            echo '❌ Build failed. Please check which test or step failed.'
         }
         success {
-            echo '✅ Build and deployment complete.'
+            echo '✅ Build and deployment complete. All checks passed.'
         }
     }
 }
