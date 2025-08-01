@@ -3,9 +3,9 @@ pipeline {
 
     environment {
         COMPOSE_PROJECT_NAME = "nopcommerce"
-        DB_CONTAINER = "nopcommerce_mssql_server"
         DB_NAME = "nopcommerce2"
-        DB_PASSWORD = "yourStrong()Password" // replace with actual password or use credentials binding
+        DB_PASSWORD = "yourStrong()Password" // 🔒 Replace with Jenkins credentials or secrets in production
+        DB_CONTAINER = "nopcommerce_mssql_server"
     }
 
     stages {
@@ -15,35 +15,12 @@ pipeline {
             }
         }
 
-        stage('Backup Database') {
-            steps {
-                sh '''
-                    echo "💾 Backing up database '${DB_NAME}'..."
-
-                    BACKUP_DIR="/var/opt/mssql/backup"
-                    BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_$(date +%F_%H-%M-%S).bak"
-                    mkdir -p backup
-
-                    echo "📤 Running SQL Server backup inside container..."
-                    docker exec -u 0 ${DB_CONTAINER} /opt/mssql-tools/bin/sqlcmd \
-                        -S localhost -U sa -P 'yourStrong()Password' \
-                        -Q "BACKUP DATABASE [${DB_NAME}] TO DISK='${BACKUP_FILE}'"
-
-                    echo "📥 Copying backup file from container to workspace..."
-                    CONTAINER_BAK=$(docker exec ${DB_CONTAINER} find ${BACKUP_DIR} -type f -name '${DB_NAME}_*.bak' | tail -n1)
-                    docker cp ${DB_CONTAINER}:${CONTAINER_BAK} ./backup/
-
-                    echo "✅ Backup complete. File copied to workspace/backup/"
-                '''
-            }
-        }
-
         stage('Stop Existing Containers') {
             steps {
                 sh '''
                     echo "🛑 Stopping and removing existing containers..."
                     docker-compose down || true
-                    docker rm -f ${DB_CONTAINER} || true
+                    docker rm -f nopcommerce_mssql_server || true
                     docker rm -f nopcommerce_web || true
                 '''
             }
@@ -57,6 +34,34 @@ pipeline {
 
                     echo "⏳ Waiting for services to be ready..."
                     sleep 30
+                '''
+            }
+        }
+
+        stage('Backup Database') {
+            steps {
+                sh '''
+                    echo "💾 Backing up database '${DB_NAME}'..."
+                    BACKUP_DIR=/var/opt/mssql/backup
+                    TIMESTAMP=$(date +%F_%H-%M-%S)
+                    BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_${TIMESTAMP}.bak"
+
+                    echo "📤 Running SQL Server backup inside container..."
+                    docker exec -u 0 ${DB_CONTAINER} /opt/mssql-tools/bin/sqlcmd \
+                        -S localhost -U sa -P "${DB_PASSWORD}" \
+                        -Q "BACKUP DATABASE [${DB_NAME}] TO DISK='${BACKUP_FILE}'"
+
+                    echo "📥 Copying backup file from container to workspace..."
+                    mkdir -p backup
+                    CONTAINER_BAK=$(docker exec ${DB_CONTAINER} find ${BACKUP_DIR} -type f -name "${DB_NAME}_*.bak" | tail -n1)
+
+                    if [ -z "$CONTAINER_BAK" ]; then
+                        echo "❌ No backup file found in container!"
+                        exit 1
+                    fi
+
+                    echo "✅ Found backup file: $CONTAINER_BAK"
+                    docker cp ${DB_CONTAINER}:"$CONTAINER_BAK" ./backup/
                 '''
             }
         }
@@ -86,11 +91,9 @@ pipeline {
     }
 
     post {
-        always {
-            echo "📦 Archiving backup files (if any)..."
-        }
         success {
             echo "✅ Pipeline completed successfully."
+
         }
         failure {
             echo "❌ Build failed. Please check which step failed."
