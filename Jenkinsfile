@@ -3,15 +3,45 @@ pipeline {
 
     environment {
         COMPOSE_PROJECT_NAME = "nopcommerce"
-        DB_NAME = "nopcommerce2"
-        DB_PASSWORD = "yourStrong()Password" // 🔒 Replace with Jenkins credentials or secrets in production
         DB_CONTAINER = "nopcommerce_mssql_server"
+        DB_NAME = "nopcommerce2"
+        DB_PASSWORD = "yourStrong()Password" // Make sure to secure this with Jenkins credentials if used in production
     }
 
     stages {
         stage('Checkout Code') {
             steps {
                 git url: 'https://github.com/devops483/nopcomCD.git'
+            }
+        }
+
+        stage('Backup Database') {
+            steps {
+                sh '''
+                    echo "💾 Backing up database '${DB_NAME}'..."
+                    BACKUP_DIR=/var/opt/mssql/backup
+                    TIMESTAMP=$(date +%F_%H-%M-%S)
+                    BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_${TIMESTAMP}.bak"
+
+                    echo "📤 Running SQL Server backup using sqlcmd from a utility container..."
+
+                    docker run --rm --network container:${DB_CONTAINER} mcr.microsoft.com/mssql-tools \
+                        /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "${DB_PASSWORD}" \
+                        -Q "BACKUP DATABASE [${DB_NAME}] TO DISK='${BACKUP_FILE}'"
+
+                    echo "📥 Copying backup file from container to workspace..."
+                    mkdir -p backup
+
+                    CONTAINER_BAK=$(docker exec ${DB_CONTAINER} find ${BACKUP_DIR} -type f -name "${DB_NAME}_*.bak" | tail -n1)
+
+                    if [ -z "$CONTAINER_BAK" ]; then
+                        echo "❌ No backup file found in container!"
+                        exit 1
+                    fi
+
+                    echo "✅ Found backup file: $CONTAINER_BAK"
+                    docker cp ${DB_CONTAINER}:"$CONTAINER_BAK" ./backup/
+                '''
             }
         }
 
@@ -38,34 +68,6 @@ pipeline {
             }
         }
 
-        stage('Backup Database') {
-            steps {
-                sh '''
-                    echo "💾 Backing up database '${DB_NAME}'..."
-                    BACKUP_DIR=/var/opt/mssql/backup
-                    TIMESTAMP=$(date +%F_%H-%M-%S)
-                    BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_${TIMESTAMP}.bak"
-
-                    echo "📤 Running SQL Server backup inside container..."
-                    docker exec -u 0 ${DB_CONTAINER} /opt/mssql-tools/bin/sqlcmd \
-                        -S localhost -U sa -P "${DB_PASSWORD}" \
-                        -Q "BACKUP DATABASE [${DB_NAME}] TO DISK='${BACKUP_FILE}'"
-
-                    echo "📥 Copying backup file from container to workspace..."
-                    mkdir -p backup
-                    CONTAINER_BAK=$(docker exec ${DB_CONTAINER} find ${BACKUP_DIR} -type f -name "${DB_NAME}_*.bak" | tail -n1)
-
-                    if [ -z "$CONTAINER_BAK" ]; then
-                        echo "❌ No backup file found in container!"
-                        exit 1
-                    fi
-
-                    echo "✅ Found backup file: $CONTAINER_BAK"
-                    docker cp ${DB_CONTAINER}:"$CONTAINER_BAK" ./backup/
-                '''
-            }
-        }
-
         stage('Smoke Tests') {
             steps {
                 sh '''
@@ -82,7 +84,7 @@ pipeline {
                     curl -vsSf http://localhost:9000/login | grep -qi "Email"
 
                     echo "🔍 Ensuring DB container is running..."
-                    docker ps | grep -q ${DB_CONTAINER}
+                    docker ps | grep -q nopcommerce_mssql_server
 
                     echo "✅ All smoke tests passed."
                 '''
@@ -93,7 +95,6 @@ pipeline {
     post {
         success {
             echo "✅ Pipeline completed successfully."
-
         }
         failure {
             echo "❌ Build failed. Please check which step failed."
