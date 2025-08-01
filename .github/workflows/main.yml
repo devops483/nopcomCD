@@ -17,10 +17,34 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+      
+      - name: Backup Database
+        run: |
+          echo " Backing up database '${DB_NAME}'..."
+          BACKUP_DIR=/var/opt/mssql/backup
+          TIMESTAMP=$(date +%F_%H-%M-%S)
+          BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_${TIMESTAMP}.bak"
+
+          echo "📤 Running SQL Server backup using sqlcmd from a utility container..."
+          docker run --rm --network container:${DB_CONTAINER} mcr.microsoft.com/mssql-tools \
+            /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "${DB_PASSWORD}" \
+            -Q "BACKUP DATABASE [${DB_NAME}] TO DISK='${BACKUP_FILE}'"
+
+          echo " Copying backup file from container to workspace..."
+          mkdir -p backup
+          CONTAINER_BAK=$(docker exec ${DB_CONTAINER} find ${BACKUP_DIR} -type f -name "${DB_NAME}_*.bak" | tail -n1)
+
+          if [ -z "$CONTAINER_BAK" ]; then
+              echo " No backup file found in container!"
+              exit 1
+          fi
+
+          echo " Found backup file: $CONTAINER_BAK"
+          docker cp ${DB_CONTAINER}:"$CONTAINER_BAK" ./backup/
 
       - name: Stop Existing Containers
         run: |
-          echo "🛑 Stopping and removing existing containers..."
+          echo " Stopping and removing existing containers..."
           docker-compose down || true
           docker rm -f nopcommerce_mssql_server || true
           docker rm -f nopcommerce_web || true
@@ -29,8 +53,8 @@ jobs:
         run: |
           echo "🚀 Starting containers..."
           docker-compose up -d
-          echo "⏱️ Waiting for services to be ready..."
-          sleep 30
+          echo "⏱ Waiting for services to be ready..."
+          sleep 40
 
       - name: Smoke Tests
         run: |
@@ -42,4 +66,4 @@ jobs:
           curl -sSf http://localhost:9000 | grep -qi "nopCommerce"
           curl -sSf http://localhost:9000/login | grep -qi "Email"
           docker ps | grep -q nopcommerce_mssql_server
-          echo "✅ Smoke tests passed!"
+          echo " Smoke tests passed!"
