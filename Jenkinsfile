@@ -3,6 +3,9 @@ pipeline {
 
     environment {
         COMPOSE_PROJECT_NAME = "nopcommerce"
+        DB_CONTAINER = "nopcommerce_mssql_server"
+        DB_NAME = "nopcommerce2"
+        DB_PASSWORD = "yourStrong()Password" // replace with actual password or use credentials binding
     }
 
     stages {
@@ -12,12 +15,35 @@ pipeline {
             }
         }
 
+        stage('Backup Database') {
+            steps {
+                sh '''
+                    echo "💾 Backing up database '${DB_NAME}'..."
+
+                    BACKUP_DIR="/var/opt/mssql/backup"
+                    BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_$(date +%F_%H-%M-%S).bak"
+                    mkdir -p backup
+
+                    echo "📤 Running SQL Server backup inside container..."
+                    docker exec ${DB_CONTAINER} /opt/mssql-tools/bin/sqlcmd \
+                        -S localhost -U sa -P '${DB_PASSWORD}' \
+                        -Q "BACKUP DATABASE [${DB_NAME}] TO DISK='${BACKUP_FILE}'"
+
+                    echo "📥 Copying backup file from container to workspace..."
+                    CONTAINER_BAK=$(docker exec ${DB_CONTAINER} find ${BACKUP_DIR} -type f -name '${DB_NAME}_*.bak' | tail -n1)
+                    docker cp ${DB_CONTAINER}:${CONTAINER_BAK} ./backup/
+
+                    echo "✅ Backup complete. File copied to workspace/backup/"
+                '''
+            }
+        }
+
         stage('Stop Existing Containers') {
             steps {
                 sh '''
                     echo "🛑 Stopping and removing existing containers..."
                     docker-compose down || true
-                    docker rm -f nopcommerce_mssql_server || true
+                    docker rm -f ${DB_CONTAINER} || true
                     docker rm -f nopcommerce_web || true
                 '''
             }
@@ -51,7 +77,7 @@ pipeline {
                     curl -vsSf http://localhost:9000/login | grep -qi "Email"
 
                     echo "🔍 Ensuring DB container is running..."
-                    docker ps | grep -q nopcommerce_mssql_server
+                    docker ps | grep -q ${DB_CONTAINER}
 
                     echo "✅ All smoke tests passed."
                 '''
@@ -60,6 +86,9 @@ pipeline {
     }
 
     post {
+        always {
+            echo "📦 Archiving backup files (if any)..."
+        }
         success {
             echo "✅ Pipeline completed successfully."
         }
