@@ -26,7 +26,7 @@ pipeline {
 
                     echo "📤 Running SQL Server backup inside container..."
                     docker exec -u 0 ${DB_CONTAINER} /opt/mssql-tools/bin/sqlcmd \
-                        -S localhost -U sa -P '${DB_PASSWORD}' \
+                        -S localhost -U sa -P 'yourStrong()Password' \
                         -Q "BACKUP DATABASE [${DB_NAME}] TO DISK='${BACKUP_FILE}'"
 
                     echo "📥 Copying backup file from container to workspace..."
