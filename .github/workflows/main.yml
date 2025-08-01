@@ -1,4 +1,4 @@
-name: nopCommerce CI/CD
+name: nopCommerce CI/CD 
 
 on:
   push:
